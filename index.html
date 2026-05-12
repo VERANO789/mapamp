@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>나만의 경로 기록 지도</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Noto+Sans+KR:wght@300;500;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Noto Sans KR', 'Inter', sans-serif; }
+        #map { height: 100vh; width: 100%; z-index: 1; }
+        .custom-popup .leaflet-popup-content-wrapper { border-radius: 12px; padding: 5px; }
+        .nav-shadow { box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08); }
+        .leaflet-bar { border: none !important; box-shadow: 0 2px 10px rgba(0,0,0,0.1) !important; }
+        .leaflet-bar a { border-bottom: 1px solid #f0f0f0 !important; }
+        .marker-pin {
+            width: 24px;
+            height: 24px;
+            border-radius: 50% 50% 50% 0;
+            background: #3b82f6;
+            position: absolute;
+            transform: rotate(-45deg);
+            left: 50%;
+            top: 50%;
+            margin: -12px 0 0 -12px;
+            border: 2px solid white;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+    </style>
+</head>
+<body class="bg-gray-50 overflow-hidden">
+
+    <header class="fixed top-4 left-4 right-4 z-[1000] flex justify-between items-center pointer-events-none">
+        <div class="bg-white p-4 rounded-2xl nav-shadow pointer-events-auto flex items-center space-x-3 border border-gray-100">
+            <div class="bg-blue-500 p-2 rounded-lg text-white">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A2 2 0 013 15.382V6.618a2 2 0 011.106-1.789l6-3a2 2 0 011.788 0l6 3a2 2 0 011.106 1.789v8.764a2 2 0 01-1.106 1.789L15 20m-6 0l6-3m-6 3V7.5M15 20v-12.5" />
+                </svg>
+            </div>
+            <div>
+                <h1 class="text-lg font-bold text-gray-800 leading-none">나의 여행 경로</h1>
+                <p class="text-xs text-gray-500 mt-1">지도를 클릭하여 경로를 그려보세요</p>
+            </div>
+        </div>
+
+        <div class="flex flex-col space-y-2 pointer-events-auto">
+            <button onclick="undoLastPoint()" class="bg-white p-3 rounded-full nav-shadow hover:bg-gray-50 transition-colors border border-gray-100 group" title="마지막 지점 취소">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-600 group-hover:text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                </svg>
+            </button>
+            <button onclick="clearPath()" class="bg-white p-3 rounded-full nav-shadow hover:bg-gray-50 transition-colors border border-gray-100 group" title="전체 삭제">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-600 group-hover:text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+            </button>
+        </div>
+    </header>
+
+    <div class="fixed bottom-8 left-1/2 -translate-x-1/2 z-[1000] w-full max-w-xs px-4">
+        <div class="bg-white/90 backdrop-blur-md p-4 rounded-3xl nav-shadow border border-gray-100 flex items-center justify-between">
+            <div class="flex flex-col">
+                <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">총 이동 거리</span>
+                <span id="total-distance" class="text-2xl font-bold text-gray-800">0.00 km</span>
+            </div>
+            <div class="bg-blue-50 px-3 py-1 rounded-full text-blue-600 text-sm font-medium" id="point-count">
+                지점 0개
+            </div>
+        </div>
+    </div>
+
+    <aside id="sidebar" class="fixed right-4 top-24 bottom-24 w-64 bg-white/90 backdrop-blur-md rounded-2xl nav-shadow border border-gray-100 z-[999] overflow-hidden flex flex-col hidden md:flex">
+        <div class="p-4 border-bottom bg-gray-50/50">
+            <h2 class="font-bold text-gray-700">경로 히스토리</h2>
+        </div>
+        <div id="path-list" class="flex-1 overflow-y-auto p-4 space-y-3">
+            <p class="text-sm text-gray-400 text-center py-10">지점을 추가하면<br>여기에 목록이 나타납니다.</p>
+        </div>
+    </aside>
+
+    <!-- Map Container -->
+    <div id="map"></div>
+
+    <script>
+        let map;
+        let points = []; // Array to store coordinates
+        let markers = []; // Array to store Leaflet marker objects
+        let polyline; // The line object
+        
+        // Custom marker icon
+        const createMarkerIcon = (number) => {
+            return L.divIcon({
+                className: 'custom-div-icon',
+                html: `<div class='marker-pin'></div><div style="position: absolute; width: 24px; text-align: center; color: white; font-weight: bold; font-size: 10px; top: 2px;">${number}</div>`,
+                iconSize: [24, 24],
+                iconAnchor: [12, 24]
+            });
+        };
+
+        window.onload = function() {
+            // Default center: Seoul
+            map = L.map('map', {
+                zoomControl: false // Customizing zoom position
+            }).setView([37.5665, 126.9780], 13);
+
+            // Adding professional clean tile layer (Naver Map style)
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; OpenStreetMap &copy; CARTO'
+            }).addTo(map);
+
+            // Re-adding zoom control to bottom right
+            L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+            // Init empty polyline
+            polyline = L.polyline([], {
+                color: '#3b82f6',
+                weight: 4,
+                opacity: 0.8,
+                dashArray: '10, 10',
+                lineJoin: 'round'
+            }).addTo(map);
+
+            map.on('click', function(e) {
+                addPoint(e.latlng);
+            });
+        };
+
+        function addPoint(latlng) {
+            points.push(latlng);
+            
+            // Create marker
+            const marker = L.marker(latlng, {
+                icon: createMarkerIcon(points.length),
+                draggable: true
+            }).addTo(map);
+
+            // Add marker to array
+            markers.push(marker);
+
+            // Update line
+            updateMap();
+            
+            // Update UI
+            updateUI();
+        }
+
+        function updateMap() {
+            // Update polyline coordinates
+            polyline.setLatLngs(points);
+            
+            // If more than 1 point, adjust line style
+            if (points.length > 1) {
+                polyline.setStyle({ dashArray: null });
+            }
+        }
+
+        function calculateDistance() {
+            let total = 0;
+            for (let i = 0; i < points.length - 1; i++) {
+                total += map.distance(points[i], points[i+1]);
+            }
+            return (total / 1000).toFixed(2); // Convert to km
+        }
+
+        function updateUI() {
+            const distanceEl = document.getElementById('total-distance');
+            const countEl = document.getElementById('point-count');
+            const listEl = document.getElementById('path-list');
+
+            const distance = calculateDistance();
+            distanceEl.innerText = `${distance} km`;
+            countEl.innerText = `지점 ${points.length}개`;
+
+            // Update sidebar list
+            if (points.length === 0) {
+                listEl.innerHTML = `<p class="text-sm text-gray-400 text-center py-10">지점을 추가하면<br>여기에 목록이 나타납니다.</p>`;
+            } else {
+                listEl.innerHTML = points.map((p, idx) => `
+                    <div class="flex items-center space-x-3 p-2 bg-gray-50 rounded-xl border border-gray-100 hover:bg-blue-50 transition-colors cursor-pointer" onclick="panToPoint(${idx})">
+                        <div class="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">${idx + 1}</div>
+                        <div class="flex-1 overflow-hidden">
+                            <p class="text-xs text-gray-400">지점 ${idx + 1}</p>
+                            <p class="text-[10px] text-gray-500 truncate">${p.lat.toFixed(4)}, ${p.lng.toFixed(4)}</p>
+                        </div>
+                    </div>
+                `).join('');
+            }
+        }
+
+        function undoLastPoint() {
+            if (points.length === 0) return;
+
+            // Remove last marker from map
+            const lastMarker = markers.pop();
+            map.removeLayer(lastMarker);
+
+            // Remove last point
+            points.pop();
+
+            updateMap();
+            updateUI();
+        }
+
+        function clearPath() {
+            if (points.length === 0) return;
+            
+            // Remove all markers
+            markers.forEach(m => map.removeLayer(m));
+            markers = [];
+            points = [];
+
+            updateMap();
+            updateUI();
+        }
+
+        function panToPoint(index) {
+            map.panTo(points[index]);
+            markers[index].bounce(); // If we had a bounce plugin, otherwise just pan
+        }
+    </script>
+</body>
+</html>
